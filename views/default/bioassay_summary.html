@@ -1,0 +1,22 @@
+{{extend 'layout.html'}}
+
+<h1>Bioassay Summary</h1>
+
+<table width=100%>
+        <tr>
+        <th>Bioassay</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Duration</th>
+        <th>Last observations</th>
+    </tr>
+{{for r in rows:}}
+    <tr>
+        <td>{{=r['bioassay_name']}}</td>
+        <td>{{=r['date_start_bioassay']}}</td>
+        <td>{{=r['date_end_bioassay']}}</td>
+        <td>{{=r['duration']}}</td>
+        <td>{{=r['max(date_observed)']}}</td>
+    </tr>
+{{pass}}
+</table>

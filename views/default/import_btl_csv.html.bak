@@ -1,0 +1,16 @@
+{{extend 'layout.html'}}
+
+Import Btl CSV
+
+CSV format:
+
+<pre>
+
+</pre>
+
+{{=FORM(
+    INPUT(_type='file',_name='csvfile'),
+    INPUT(_type='hidden',_value='btl',_name='table'),
+    INPUT(_type='submit',_value='Upload'))}}
+
+{{=response.toolbar()}}

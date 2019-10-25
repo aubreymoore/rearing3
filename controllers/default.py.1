@@ -1,0 +1,209 @@
+# -*- coding: utf-8 -*-
+# this file is released under public domain and you can use without limitations
+
+# -------------------------------------------------------------------------
+# This is a sample controller
+# - index is the default action of any application
+# - user is required for authentication and authorization
+# - download is for downloading files uploaded in the db (does streaming)
+# -------------------------------------------------------------------------
+
+import matplotlib
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import subprocess
+import pandas as pd
+import lifelines
+from lifelines import KaplanMeierFitter, statistics
+
+def checkin_form():
+    form = SQLFORM.factory(
+        Field('date_checkin', 'date', requires=IS_NOT_EMPTY(), label='Checkin date', default=datetime.datetime.now()),
+        Field('beetle_count', 'integer', label= 'Number of beetles', requires=IS_INTEGER()))
+    if form.process().accepted:
+        response.flash = 'form accepted'
+        #session.your_name = form.vars.your_name
+        #session.your_image = form.vars.your_image
+    elif form.errors:
+        response.flash = 'form has errors'
+    return dict(form=form)
+
+def test_logger():
+    logger.debug('message from controller.')
+    return
+
+@auth.requires_login()
+def import_obs_csv():
+    test_logger()
+    logger.debug('starting import_obs_csv.')
+    if request.vars.csvfile != None:
+        # set values
+        table = db[request.vars.table]
+        file = request.vars.csvfile.file
+
+        # import csv file
+        logger.debug('*** {} importing {}'.format(auth.user.email, request.vars.csvfile.filename))
+        table.import_from_csv_file(file)
+
+        response.flash = 'Data uploaded'
+    return dict()
+
+
+@auth.requires_login()
+def import_btl_csv():
+    logger.debug('starting import_btl_csv.')
+    if request.vars.csvfile != None:
+        logger.debug('message from import_btl_csv.')
+
+        # set values
+        table = db[request.vars.table]
+        file = request.vars.csvfile.file
+
+        # import csv file
+        logger.debug('can you see this?')
+        logger.debug('*** {} importing {}'.format(auth.user.email, request.vars.csvfile.filename))
+        table.import_from_csv_file(file)
+    return dict()
+
+@auth.requires_login()
+def clear_log():
+    with open('rearing.log', 'w'):
+        pass
+    return
+
+@auth.requires_login()
+def view_log():
+    return response.stream('rearing.log')
+
+def wiki():
+    auth.wikimenu() # add the wiki to the menu
+    return auth.wiki() 
+
+@auth.requires_login()
+def btl_form():
+    form = SQLFORM.smartgrid(db.btl)
+    return locals()
+
+@auth.requires_login()
+def obs_form():
+    form = SQLFORM.smartgrid(db.obs)
+    return locals()
+
+def report_form():
+    # Generate a sorted list of bioassay_names to be used in a dropdown
+    # This list includes names for reps and the bioassays the reps are part of
+    sql='select bioassay_name from btl where bioassay_name IS NOT NULL group by bioassay_name;'
+    choices = db.executesql(sql)
+    choices = [i[0] for i in choices]
+    withoutreps = [i.split('-')[0] for i in choices]
+    choices = set(choices).union(set(withoutreps))
+    choices = list(choices)
+    choices.sort()
+    if request.vars.bioassay_name:
+        generate_pdf(request.vars.bioassay_name)
+    return locals()
+
+def generate_pdf(bioassay_name):
+
+    sql = "SELECT * FROM btl WHERE bioassay_name LIKE '%{}%'".format(bioassay_name)
+    rows = db.executesql(sql, as_dict=True)
+    df = pd.DataFrame(rows)
+    print df.info()
+    t, e = lifelines.utils.datetimes_to_durations(
+        start_times=pd.to_datetime(df.date_start_bioassay),
+        end_times=pd.to_datetime(df.date_died),
+        fill_date=pd.to_datetime(df.date_end_bioassay))
+    print t
+    df['t'] = t
+    df['e'] = e
+
+    # Create survorship plot
+    fig, ax = plt.subplots(figsize=(18,6))
+    kmf = KaplanMeierFitter()
+    for name, grouped_df in df.groupby('bioassay_treatment'):
+        kmf.fit(grouped_df['t'], grouped_df['e'], label=name)
+        kmf.plot(ax=ax, linewidth=5, ci_show=False)
+    ax.set_xlabel('days after treatment')
+    ax.set_ylabel('proportion dead')
+    fig.savefig('survivorshipfig.pdf')
+    
+    # Create motality-table-tex
+    results = statistics.pairwise_logrank_test(df['t'], df['bioassay_treatment'], df['e'])
+    s = r'''
+        \begin{table}[]
+        \centering
+        \caption{Pairwise differences among mortality curves.}
+    '''
+    s += results.summary.to_latex()
+    s += '\end{table}'
+    mortality_table_tex = s
+    print s
+
+    # Create document
+    s = r'''
+        \documentclass[11pt]{scrartcl}
+        \usepackage{graphicx}
+        \usepackage{booktabs}
+        \usepackage[letterpaper, margin=1in]{geometry}
+        \title{---title---}
+        \author{Aubrey Moore and Jim Grasela\\University of Guam Coconut Rhinoceros Beetle Biocontrol Project}
+        \begin{document}
+        \maketitle
+        \section{Mortality}
+        \includegraphics[width=\textwidth]{survivorshipfig.pdf}
+        ---mortality-table-tex---
+        \end{document}
+    '''
+    s = s.replace('---title---', bioassay_name)
+    s = s.replace('---mortality-table-tex---', mortality_table_tex)
+    print s
+    
+    # Generate PDF
+    with open('report.tex', "w") as f:
+        f.write(s)
+    print '***** report.tex written'
+    result = subprocess.call(['pdflatex', 'report.tex'])
+    print '***** result'
+    return response.stream('report.pdf')
+
+
+def index():
+    return locals()
+
+def user():
+    """
+    exposes:
+    http://..../[app]/default/user/login
+    http://..../[app]/default/user/logout
+    http://..../[app]/default/user/register
+    http://..../[app]/default/user/profile
+    http://..../[app]/default/user/retrieve_password
+    http://..../[app]/default/user/change_password
+    http://..../[app]/default/user/bulk_register
+    use @auth.requires_login()
+        @auth.requires_membership('group name')
+        @auth.requires_permission('read','table name',record_id)
+    to decorate functions that need access control
+    also notice there is http://..../[app]/appadmin/manage/auth to allow administrator to manage users
+    """
+    return dict(form=auth())
+
+
+@cache.action()
+def download():
+    """
+    allows downloading of uploaded files
+    http://..../[app]/default/download/[filename]
+    """
+    return response.download(request, db)
+
+
+def call():
+    """
+    exposes services. for example:
+    http://..../[app]/default/call/jsonrpc
+    decorate with @services.jsonrpc the functions to expose
+    supports xml, json, xmlrpc, jsonrpc, amfrpc, rss, csv
+    """
+    return service()

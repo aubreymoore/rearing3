@@ -1,0 +1,4 @@
+{{extend 'layout.html'}}
+<h1>This is the default/caca.html template</h1>
+{{=rows}}
+{{=BEAUTIFY(response._vars)}}

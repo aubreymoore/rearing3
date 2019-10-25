@@ -1,0 +1,484 @@
+(dp1
+S'output'
+p2
+S"<type 'exceptions.NameError'> global name 'texescape' is not defined"
+p3
+sS'layer'
+p4
+S'/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py'
+p5
+sS'code'
+p6
+S'# -*- coding: utf-8 -*-\n# this file is released under public domain and you can use without limitations\n\n# -------------------------------------------------------------------------\n# This is a sample controller\n# - index is the default action of any application\n# - user is required for authentication and authorization\n# - download is for downloading files uploaded in the db (does streaming)\n# -------------------------------------------------------------------------\n\nimport matplotlib\nmatplotlib.use("Agg")\n\nimport matplotlib.pyplot as plt\nimport subprocess\nimport pandas as pd\nimport lifelines\nfrom lifelines import KaplanMeierFitter, statistics\nimport re\n\ndef tex_escape(text):\n    """\n        :param text: a plain text message\n        :return: the message escaped to appear correctly in LaTeX\n    """\n    conv = {\n        \'&\': r\'\\&\',\n        \'%\': r\'\\%\',\n        \'$\': r\'\\$\',\n        \'#\': r\'\\#\',\n        \'_\': r\'\\_\',\n        \'{\': r\'\\{\',\n        \'}\': r\'\\}\',\n        \'~\': r\'\\textasciitilde{}\',\n        \'^\': r\'\\^{}\',\n        \'\\\\\': r\'\\textbackslash{}\',\n        \'<\': r\'\\textless{}\',\n        \'>\': r\'\\textgreater{}\',\n    }\n    regex = re.compile(\'|\'.join(re.escape(unicode(key)) for key in sorted(conv.keys(), key = lambda item: - len(item))))\n    return regex.sub(lambda match: conv[match.group()], text)\n\ndef caca():\n    return dict(rows = db(db.btl).select())\n\ndef bioassay_summary():\n    sql = """\n    SELECT bioassay_name, date_start_bioassay, date_end_bioassay, max(date_observed), julianday(date_end_bioassay)-julianday(date_start_bioassay) AS duration\n    FROM btl, obs\n    WHERE \n        bioassay_name is not null\n        and bioassay_name is not \'\'\n        and btl.id=obs.btl\n    GROUP BY bioassay_name\n    ORDER BY bioassay_name;\n    """\n    rows = db.executesql(sql, as_dict=True)\n    return locals()\n\ndef checkin_form():\n    form = SQLFORM.factory(\n        Field(\'date_checkin\', \'date\', requires=IS_DATE(), label=\'Checkin date\'),\n        Field(\'beetle_count\', \'integer\', label= \'Number of beetles\', requires=IS_INT_IN_RANGE(1, 1000)))\n    if form.process().accepted:\n        response.flash = \'form accepted\'\n        date_checkin = form.vars.date_checkin\n        beetle_count = form.vars.beetle_count\n        result = db.executesql("select min(jar) from btl;")\n        minjar = min(0, result[0][0])\n        result = db.executesql("select max(id) from btl;")\n        firstid = result[0][0] + 1\n        for i in range(form.vars.beetle_count):\n            minjar = minjar - 1\n            sql = "INSERT INTO btl (date_checkin, jar) VALUES (\'{}\', {});".format(date_checkin, minjar)\n            db.executesql(sql)\n        result = db.executesql("select max(id) from btl;")\n        lastid = result[0][0]\n        return dict(beetle_count=beetle_count, firstid=firstid, lastid=lastid)\n    elif form.errors:\n        response.flash = \'form has errors\'\n    return dict(form=form)\n\n\ndef fixit():\n    sql = "select * from btl limit 10;"\n    rows = db.executesql(sql)\n    for r in rows:\n        print(r)\n    return\n\ndef download_db():\n    return response.stream(\'applications/rearing/databases/storage.sqlite\')\n\ndef test_logger():\n    logger.debug(\'message from controller.\')\n    return\n\n@auth.requires_login()\ndef import_obs_csv():\n    test_logger()\n    logger.debug(\'starting import_obs_csv.\')\n    if request.vars.csvfile != None:\n        # set values\n        table = db[request.vars.table]\n        file = request.vars.csvfile.file\n\n        # import csv file\n        logger.debug(\'*** {} importing {}\'.format(auth.user.email, request.vars.csvfile.filename))\n        table.import_from_csv_file(file)\n\n        response.flash = \'Data uploaded\'\n    return dict()\n\n\n@auth.requires_login()\ndef import_btl_csv():\n    logger.debug(\'starting import_btl_csv.\')\n    if request.vars.csvfile != None:\n        logger.debug(\'message from import_btl_csv.\')\n\n        # set values\n        table = db[request.vars.table]\n        file = request.vars.csvfile.file\n\n        # import csv file\n        logger.debug(\'can you see this?\')\n        logger.debug(\'*** {} importing {}\'.format(auth.user.email, request.vars.csvfile.filename))\n        table.import_from_csv_file(file)\n    return dict()\n\n@auth.requires_login()\ndef clear_log():\n    with open(\'rearing.log\', \'w\'):\n        pass\n    return\n\n@auth.requires_login()\ndef view_log():\n    return response.stream(\'rearing.log\')\n\n@auth.requires_login()\ndef view_tex_log():\n    return response.stream(\'report.log\')\n\n@auth.requires_login()\ndef view_tex():\n    return response.stream(\'report.tex\')\n\ndef wiki():\n    auth.wikimenu() # add the wiki to the menu\n    return auth.wiki() \n\n@auth.requires_login()\ndef btl_form():\n    form = SQLFORM.smartgrid(db.btl)\n    return locals()\n\n@auth.requires_login()\ndef obs_form():\n    form = SQLFORM.smartgrid(db.obs)\n    return locals()\n\n@auth.requires_login()\ndef bioassay_form():\n    form = SQLFORM.smartgrid(db.bioassay)\n    return locals()\n\ndef report_form():\n    # Generate a sorted list of bioassay_names to be used in a dropdown\n    # This list includes names for reps and the bioassays the reps are part of\n    sql=\'select bioassay_name from btl where bioassay_name IS NOT NULL group by bioassay_name;\'\n    choices = db.executesql(sql)\n    choices = [i[0] for i in choices]\n    withoutreps = [\'{}-%\'.format(i.split(\'-\')[0]) for i in choices]\n    choices = set(choices).union(set(withoutreps))\n    choices = list(choices)\n    choices.sort()\n    if request.vars.bioassay_name_pattern:\n        generate_pdf(request.vars.bioassay_name_pattern)\n    return locals()\n\ndef plot_mass_by_treatment(bioassay_name_pattern):\n    """\n    Generates a plot of mass curves for each beetle in a bioassay treatment.\n    Plots are saved as PDF files in the current work directory.\n    Bioassay name can specify an replicate (example: \'DUG42-1\') or all\n    replicates within a bioassay (example: \'DUG42\').\n    """\n\n    # Get data\n    sql = """\n    SELECT bioassay_treatment,\n        julianday(date_observed) - julianday(date_start_bioassay) AS days,\n        btl, mass\n    FROM btl, obs\n    WHERE\n        btl.id = obs.btl\n    AND\n        bioassay_name LIKE \'{}\';\n    """.format(bioassay_name_pattern)\n    logger.debug(sql)\n\n    rows = db.executesql(sql, as_dict=True)\n    df = pd.DataFrame(rows)\n    logger.debug(\'{} rows returned.\'.format(df.shape[0]))\n\n    # Save plots as PDF files\n    file_list = []\n    for treatment in df.bioassay_treatment.unique():\n        fig, ax = plt.subplots(figsize=(18,6))\n        for name, group in df[df.bioassay_treatment==treatment].groupby(\'btl\'):\n            group.plot(x=\'days\', \n                       y=\'mass\', \n                       xlim = [df.days.min(), df.days.max()],\n                       ylim = [df.mass.min(), df.mass.max()],\n                       ax=ax, \n                       label=name, \n                       linewidth=5)\n        ax.set_xlabel(\'days after treatment\')\n        ax.set_ylabel(\'mass (mg)\')\n        file_name = \'mass-{}.pdf\'.format(treatment.replace(\' \', \'-\'))\n        fig.savefig(file_name)\n        file_list.append(file_name)\n    return file_list\n\n\ndef get_postmortem_images(bioassay_name_pattern):\n    """\n    """\n    # Get data\n    sql = """\n    SELECT id, bioassay_name, bioassay_treatment, pm_image\n    FROM btl\n    WHERE bioassay_name LIKE \'{}\' AND pm_image IS NOT NULL AND pm_image != \'\';\n    """.format(bioassay_name_pattern)\n    rows = db.executesql(sql, as_dict=True)\n    df = pd.DataFrame(rows)\n    df.dropna(inplace=True)\n    if df.empty:\n        return \'\'\n\n    # generate tex\n    \n    tex = \'\'\n    for treatment in df.bioassay_treatment.unique():\n        tex += r\'\\subsection{\' + treatment + r\'}\' + \'\\n\'\n        for index, row in df[df.bioassay_treatment==treatment].iterrows():\n            tex += r\'\\begin{figure}[h!]\' + \'\\n\'\n            tex += r\'    \\centering\' + \'\\n\'\n            tex += r\'    \\includegraphics[width=\\linewidth, height=\\textheight, keepaspectratio]{applications/rearing/uploads/\' + row.pm_image + r\'}\' + \'\\n\'\n            tex += r\'    \\caption{Bioassay: \' + row.bioassay_name + \'; Treatment: \' + row.bioassay_treatment + r\'; Beetle ID: \' + str(row.id) + r\'}\' + \'\\n\'\n            tex += r\'\\end{figure}\' + \'\\n\'\n            tex += r\'\\clearpage\' + \'\\n\'\n    return tex\n\n\ndef generate_pdf(bioassay_name_pattern):\n    # Mod by Aubrey Moore 2019-04-17.\n    # The following sql was modified to solve a problem.\n    # The modified sql does a selects records where the full bioassay name is matcched.\n    # Previously, a search for \'PNG\' matched [PNG-1, PNG-2, PNG-3, PNGperOS-1, PNGperOS-2, PNGperOS-3]\n    # Now, a search for \'PNG\' matches only [PNG-1, PNG-2, PNG-3].\n    #sql = "SELECT * FROM btl WHERE bioassay_name LIKE \'%{}%\'".format(bioassay_name)\n    \n    bioassay_name = bioassay_name_pattern.replace(\'%\',\'\')\n    \n    sql = "SELECT * FROM btl WHERE bioassay_name LIKE \'{}\'".format(bioassay_name_pattern)\n    rows = db.executesql(sql, as_dict=True)\n    df = pd.DataFrame(rows)\n    print df.info()\n    t, e = lifelines.utils.datetimes_to_durations(\n        start_times=pd.to_datetime(df.date_start_bioassay),\n        end_times=pd.to_datetime(df.date_died),\n        fill_date=pd.to_datetime(df.date_end_bioassay))\n    print t\n    df[\'t\'] = t\n    df[\'e\'] = e\n\n    # Create survorship plot\n    fig, ax = plt.subplots(figsize=(18,6))\n    kmf = KaplanMeierFitter()\n    for name, grouped_df in df.groupby(\'bioassay_treatment\'):\n        kmf.fit(grouped_df[\'t\'], grouped_df[\'e\'], label=name)\n        kmf.plot(ax=ax, linewidth=5, ci_show=False)\n    ax.set_xlabel(\'days after treatment\')\n    ax.set_ylabel(\'proportion dead\')\n    ax.set_ylim([0,1])\n    fig.savefig(\'survivorshipfig.pdf\')\n    \n    # Create motality-table-tex\n    results = statistics.pairwise_logrank_test(df[\'t\'], df[\'bioassay_treatment\'], df[\'e\'])\n    s = r\'\'\'\n        \\begin{table}[h!]\n        \\centering\n        \\caption{Pairwise differences among mortality curves.}\n    \'\'\'\n    s += results.summary.to_latex()\n    s += \'\\end{table}\'\n    mortality_table_tex = s\n    print s\n    \n    # Create document\n    s = r\'\'\'\n        \\documentclass[11pt]{scrartcl}\n        \\usepackage{textcomp}\n        \\usepackage{gensymb}\n        \\usepackage{graphicx}\n        \\usepackage{grffile} %required because there are multiple dot characters in my file names\n        \\usepackage{booktabs}\n        \\usepackage[letterpaper, margin=1in]{geometry}\n        \n        \\titlehead{\\centering\\includegraphics[width=0.75in]{applications/rearing/static/images/crb_logo.png}\\\\\n        \tUniversity of Guam Coconut Rhinoceros Beetle Biological Control Project\\\\\n        \tBioassay Report generated by CRB Rearing Database v.20190317\\\\\n        \thttps://aubreymoore.pythonanywhere.com/rearing}\n        \\title{---title---}\n        \\author{Aubrey Moore and Jim Grasela\\\\University of Guam Coconut Rhinoceros Beetle Biocontrol Project}\n\n\\begin{document}\n\n    \\begin{titlepage}\n        \\maketitle\n\t\t\\tableofcontents\n\t\\end{titlepage}\n\n        ---description---\n        \n        \\clearpage\n        \\section{Mortality}\n        \\includegraphics[width=\\textwidth]{survivorshipfig.pdf}\n        ---mortality-table-tex---\n        \n        \\clearpage\n        \\section{Mass}\n        ---mass plots---\n        \n        \\clearpage\n        \\section{Postmortem Images}\n        ---postmortem images---\n        \n        \\end{document}\n    \'\'\'\n    s = s.replace(\'---title---\', bioassay_name)\n    s = s.replace(\'---mortality-table-tex---\', mortality_table_tex)\n    \n    # Replace ---description--- with tex from database\n    sql = \'select tex from bioassay where name="{}"\'.format(bioassay_name_pattern)\n    logger.debug(sql)\n    rows = db.executesql(sql)\n    if rows:\n        logger.debug(rows[0])\n        description = rows[0][0]\n        description = description.encode(\'utf8\')\n        logger.debug(\'type: {}   description: {}\'.format(type(description), description))\n        s = s.replace(\'---description---\', description)\n    else:\n        s = s.replace(\'---description---\', \'\')\n   \n    #Replace ---mass plots---\n    file_list = plot_mass_by_treatment(bioassay_name_pattern)\n    logger.debug(\'file_list: {}\'.format(file_list))\n    tex = \'\'\n    for file_name in file_list:\n        tex += r\'\\subsection*{\' + file_name.replace(\'-\', \' \') + r\'}\'\n        tex += \'\\n\'\n        tex += r\'\\includegraphics[width=\\textwidth]{\' + file_name+ r\'}\'\n        tex += \'\\n\'\n    s = s.replace(\'---mass plots---\', tex)\n    if False:\n        #Replace ---postmortem images---\n        tex = get_postmortem_images(bioassay_name_pattern)\n        s = s.replace(\'---postmortem images---\', tex)\n    \n    s = texescape(s)\n    logger.debug(s)\n    \n    # Generate PDF\n    with open(\'report.tex\', "w") as f:\n        f.write(s)\n    result = subprocess.call([\'pdflatex\', \'report.tex\'])\n    result = subprocess.call([\'pdflatex\', \'report.tex\'])\n    return response.stream(\'report.pdf\')\n\n\ndef index():\n    return locals()\n\ndef user():\n    """\n    exposes:\n    http://..../[app]/default/user/login\n    http://..../[app]/default/user/logout\n    http://..../[app]/default/user/register\n    http://..../[app]/default/user/profile\n    http://..../[app]/default/user/retrieve_password\n    http://..../[app]/default/user/change_password\n    http://..../[app]/default/user/bulk_register\n    use @auth.requires_login()\n        @auth.requires_membership(\'group name\')\n        @auth.requires_permission(\'read\',\'table name\',record_id)\n    to decorate functions that need access control\n    also notice there is http://..../[app]/appadmin/manage/auth to allow administrator to manage users\n    """\n    return dict(form=auth())\n\n\n@cache.action()\ndef download():\n    """\n    allows downloading of uploaded files\n    http://..../[app]/default/download/[filename]\n    """\n    return response.download(request, db)\n\n\ndef call():\n    """\n    exposes services. for example:\n    http://..../[app]/default/call/jsonrpc\n    decorate with @services.jsonrpc the functions to expose\n    supports xml, json, xmlrpc, jsonrpc, amfrpc, rss, csv\n    """\n    return service()\n\nresponse._vars=response._caller(report_form)\n'
+p7
+sS'snapshot'
+p8
+(dp9
+S'exception'
+p10
+(dp11
+S'__hash__'
+p12
+S"<method-wrapper '__hash__' of exceptions.NameError object>"
+p13
+sS'__setattr__'
+p14
+S"<method-wrapper '__setattr__' of exceptions.NameError object>"
+p15
+sS'__reduce_ex__'
+p16
+S'<built-in method __reduce_ex__ of exceptions.NameError object>'
+p17
+sS'__getslice__'
+p18
+S"<method-wrapper '__getslice__' of exceptions.NameError object>"
+p19
+sS'__getitem__'
+p20
+S"<method-wrapper '__getitem__' of exceptions.NameError object>"
+p21
+sS'__setstate__'
+p22
+S'<built-in method __setstate__ of exceptions.NameError object>'
+p23
+sS'args'
+p24
+S'("global name \'texescape\' is not defined",)'
+p25
+sS'__reduce__'
+p26
+S'<built-in method __reduce__ of exceptions.NameError object>'
+p27
+sS'__str__'
+p28
+S"<method-wrapper '__str__' of exceptions.NameError object>"
+p29
+sS'__format__'
+p30
+S'<built-in method __format__ of exceptions.NameError object>'
+p31
+sS'__getattribute__'
+p32
+S"<method-wrapper '__getattribute__' of exceptions.NameError object>"
+p33
+sS'__class__'
+p34
+S"<type 'exceptions.NameError'>"
+p35
+sS'__unicode__'
+p36
+S'<built-in method __unicode__ of exceptions.NameError object>'
+p37
+sS'__delattr__'
+p38
+S"<method-wrapper '__delattr__' of exceptions.NameError object>"
+p39
+sS'__subclasshook__'
+p40
+S'<built-in method __subclasshook__ of type object>'
+p41
+sS'__repr__'
+p42
+S"<method-wrapper '__repr__' of exceptions.NameError object>"
+p43
+sS'__dict__'
+p44
+S'{}'
+p45
+sS'__sizeof__'
+p46
+S'<built-in method __sizeof__ of exceptions.NameError object>'
+p47
+sS'__doc__'
+p48
+S"'Name not found globally.'"
+p49
+sS'__init__'
+p50
+S"<method-wrapper '__init__' of exceptions.NameError object>"
+p51
+sS'__new__'
+p52
+S'<built-in method __new__ of type object>'
+p53
+ssS'evalue'
+p54
+S"global name 'texescape' is not defined"
+p55
+sS'request'
+p56
+cgluon.html
+XML_unpickle
+p57
+(S'sI`\x00\x00<div><table><tr><td style="font-weight:bold;vertical-align:top;">ajax</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">application</td><td style="vertical-align:top;">:</td><td><div>rearing3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">args</td><td style="vertical-align:top;">:</td><td><div><table></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cid</td><td style="vertical-align:top;">:</td><td><div>None</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">client</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">controller</td><td style="vertical-align:top;">:</td><td><div>default</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cookies</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">session_id_admin</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1-a2452d09-b80f-4d02-bdfa-df8659205626<table><tr><td style="font-weight:bold;vertical-align:top;">comment</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">domain</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">expires</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">httponly</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">max-age</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">path</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">secure</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">version</td><td style="vertical-align:top;">:</td><td><div></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_id_rearing3</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64<table><tr><td style="font-weight:bold;vertical-align:top;">comment</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">domain</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">expires</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">httponly</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">max-age</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">path</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">secure</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">version</td><td style="vertical-align:top;">:</td><td><div></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_id_welcome</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1-d00a721d-06e8-4ecb-a130-beb9253495ec<table><tr><td style="font-weight:bold;vertical-align:top;">comment</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">domain</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">expires</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">httponly</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">max-age</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">path</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">secure</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">version</td><td style="vertical-align:top;">:</td><td><div></div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">env</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">HTTP_ACCEPT</td><td style="vertical-align:top;">:</td><td><div>text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_ACCEPT_ENCODING</td><td style="vertical-align:top;">:</td><td><div>gzip, deflate, br</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_ACCEPT_LANGUAGE</td><td style="vertical-align:top;">:</td><td><div>en-US,en;q=0.9</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_CONNECTION</td><td style="vertical-align:top;">:</td><td><div>keep-alive</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_COOKIE</td><td style="vertical-align:top;">:</td><td><div>session_id_rearing3=127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64; session_id_welcome=127.0.0.1-d00a721d-06e8-4ecb-a130-beb9253495ec; session_id_admin=127.0.0.1-a2452d09-b80f-4d02-bdfa-df8659205626</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_HOST</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1:8000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_REFERER</td><td style="vertical-align:top;">:</td><td><div>http://127.0.0.1:8000/rearing3/default/report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_SEC_FETCH_MODE</td><td style="vertical-align:top;">:</td><td><div>navigate</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_SEC_FETCH_SITE</td><td style="vertical-align:top;">:</td><td><div>same-origin</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_SEC_FETCH_USER</td><td style="vertical-align:top;">:</td><td><div>?1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_UPGRADE_INSECURE_REQUESTS</td><td style="vertical-align:top;">:</td><td><div>1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">HTTP_USER_AGENT</td><td style="vertical-align:top;">:</td><td><div>Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/77.0.3865.90 Chrome/77.0.3865.90 Safari/537.36</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">PATH_INFO</td><td style="vertical-align:top;">:</td><td><div>/rearing3/default/report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">QUERY_STRING</td><td style="vertical-align:top;">:</td><td><div>bioassay_name_pattern=V23B_large_bioassay-1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">REMOTE_ADDR</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">REMOTE_PORT</td><td style="vertical-align:top;">:</td><td><div>54896</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">REQUEST_METHOD</td><td style="vertical-align:top;">:</td><td><div>GET</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">SCRIPT_NAME</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">SERVER_NAME</td><td style="vertical-align:top;">:</td><td><div>aubrey-Latitude-7280</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">SERVER_PORT</td><td style="vertical-align:top;">:</td><td><div>8000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">SERVER_PROTOCOL</td><td style="vertical-align:top;">:</td><td><div>HTTP/1.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">SERVER_SOFTWARE</td><td style="vertical-align:top;">:</td><td><div>Rocket 1.2.6</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">app_folders</td><td style="vertical-align:top;">:</td><td><div>set([&#x27;/home/aubrey/w2p27/web2py/applications/welcome/&#x27;, &#x27;/home/aubrey/w2p27/web2py/applications/rearing3/&#x27;, &#x27;/home/aubrey/w2p27/web2py/applications/admin/&#x27;])</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">applications_parent</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cmd_args</td><td style="vertical-align:top;">:</td><td><div><table></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cmd_options</td><td style="vertical-align:top;">:</td><td><div>&lt;Values at 0x7fe4edb22758: {&#x27;verbose&#x27;: False, &#x27;ip&#x27;: &#x27;127.0.0.1&#x27;, &#x27;debuglevel&#x27;: 30, &#x27;with_scheduler&#x27;: False, &#x27;shutdown_timeout&#x27;: 5, &#x27;taskbar&#x27;: False, &#x27;with_coverage&#x27;: False, &#x27;pid_filename&#x27;: &#x27;httpserver.pid&#x27;, &#x27;maxthreads&#x27;: None, &#x27;softcron&#x27;: False, &#x27;server_name&#x27;: &#x27;aubrey-Latitude-7280&#x27;, &#x27;bpython&#x27;: False, &#x27;nogui&#x27;: False, &#x27;port&#x27;: 8000, &#x27;print_errors&#x27;: False, &#x27;extcron&#x27;: False, &#x27;runcron&#x27;: False, &#x27;run_system_tests&#x27;: False, &#x27;test&#x27;: None, &#x27;folder&#x27;: &#x27;/home/aubrey/w2p27/web2py&#x27;, &#x27;config&#x27;: &#x27;&#x27;, &#x27;minthreads&#x27;: None, &#x27;shell&#x27;: None, &#x27;run&#x27;: &#x27;&#x27;, &#x27;log_filename&#x27;: &#x27;httpserver.log&#x27;, &#x27;profiler_dir&#x27;: None, &#x27;args&#x27;: [&#x27;&#x27;], &#x27;socket_timeout&#x27;: 5, &#x27;ssl_ca_certificate&#x27;: None, &#x27;scheduler&#x27;: None, &#x27;interfaces&#x27;: None, &#x27;ssl_private_key&#x27;: &#x27;&#x27;, &#x27;gae&#x27;: None, &#x27;password&#x27;: &#x27;******&#x27;, &#x27;request_queue_size&#x27;: 5, &#x27;ssl_certificate&#x27;: &#x27;&#x27;, &#x27;cronjob&#x27;: False, &#x27;numthreads&#x27;: None, &#x27;quiet&#x27;: False, &#x27;import_models&#x27;: False, &#x27;timeout&#x27;: 10, &#x27;plain&#x27;: False, &#x27;nobanner&#x27;: False}&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">db_sessions</td><td style="vertical-align:top;">:</td><td><div>set([])</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">debugging</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">gluon_parent</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_accept</td><td style="vertical-align:top;">:</td><td><div>text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_accept_encoding</td><td style="vertical-align:top;">:</td><td><div>gzip, deflate, br</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_accept_language</td><td style="vertical-align:top;">:</td><td><div>en-US,en;q=0.9</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_connection</td><td style="vertical-align:top;">:</td><td><div>keep-alive</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_cookie</td><td style="vertical-align:top;">:</td><td><div>session_id_rearing3=127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64; session_id_welcome=127.0.0.1-d00a721d-06e8-4ecb-a130-beb9253495ec; session_id_admin=127.0.0.1-a2452d09-b80f-4d02-bdfa-df8659205626</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_host</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1:8000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_referer</td><td style="vertical-align:top;">:</td><td><div>http://127.0.0.1:8000/rearing3/default/report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_sec_fetch_mode</td><td style="vertical-align:top;">:</td><td><div>navigate</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_sec_fetch_site</td><td style="vertical-align:top;">:</td><td><div>same-origin</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_sec_fetch_user</td><td style="vertical-align:top;">:</td><td><div>?1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_upgrade_insecure_requests</td><td style="vertical-align:top;">:</td><td><div>1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">http_user_agent</td><td style="vertical-align:top;">:</td><td><div>Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/77.0.3865.90 Chrome/77.0.3865.90 Safari/537.36</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_jython</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_pypy</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_source</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">local_hosts</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>::1</div></td></tr><tr><td><div>127.0.1.1</div></td></tr><tr><td><div>::ffff:127.0.0.1</div></td></tr><tr><td><div>127.0.0.1</div></td></tr><tr><td><div>aubrey-Latitude-7280</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">path_info</td><td style="vertical-align:top;">:</td><td><div>/rearing3/default/report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">query_string</td><td style="vertical-align:top;">:</td><td><div>bioassay_name_pattern=V23B_large_bioassay-1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">remote_addr</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">remote_port</td><td style="vertical-align:top;">:</td><td><div>54896</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">request_method</td><td style="vertical-align:top;">:</td><td><div>GET</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">request_uri</td><td style="vertical-align:top;">:</td><td><div>/rearing3/default/report_form?bioassay_name_pattern=V23B_large_bioassay-1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">script_name</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">server_name</td><td style="vertical-align:top;">:</td><td><div>aubrey-Latitude-7280</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">server_port</td><td style="vertical-align:top;">:</td><td><div>8000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">server_protocol</td><td style="vertical-align:top;">:</td><td><div>HTTP/1.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">server_software</td><td style="vertical-align:top;">:</td><td><div>Rocket 1.2.6</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">web2py_path</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">web2py_version</td><td style="vertical-align:top;">:</td><td><div>2.14.6-stable+timestamp.2016.05.10.00.21.47</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.errors</td><td style="vertical-align:top;">:</td><td><div>&lt;open file &#x27;&lt;stderr&gt;&#x27;, mode &#x27;w&#x27; at 0x7fe4f440e1e0&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.file_wrapper</td><td style="vertical-align:top;">:</td><td><div>&lt;class wsgiref.util.FileWrapper at 0x7fe4edb50530&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.input</td><td style="vertical-align:top;">:</td><td><div>&lt;socket._fileobject object at 0x7fe4c8069bd0&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.multiprocess</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.multithread</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.run_once</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.url_scheme</td><td style="vertical-align:top;">:</td><td><div>http</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi.version</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>1</div></td></tr><tr><td><div>0</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_errors</td><td style="vertical-align:top;">:</td><td><div>&lt;open file &#x27;&lt;stderr&gt;&#x27;, mode &#x27;w&#x27; at 0x7fe4f440e1e0&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_file_wrapper</td><td style="vertical-align:top;">:</td><td><div>&lt;class wsgiref.util.FileWrapper at 0x7fe4edb50530&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_input</td><td style="vertical-align:top;">:</td><td><div>&lt;socket._fileobject object at 0x7fe4c8069bd0&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_multiprocess</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_multithread</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_run_once</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_url_scheme</td><td style="vertical-align:top;">:</td><td><div>http</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi_version</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>1</div></td></tr><tr><td><div>0</div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">extension</td><td style="vertical-align:top;">:</td><td><div>html</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">folder</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py/applications/rearing3/</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">function</td><td style="vertical-align:top;">:</td><td><div>report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">global_settings</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">app_folders</td><td style="vertical-align:top;">:</td><td><div>set([&#x27;/home/aubrey/w2p27/web2py/applications/welcome/&#x27;, &#x27;/home/aubrey/w2p27/web2py/applications/rearing3/&#x27;, &#x27;/home/aubrey/w2p27/web2py/applications/admin/&#x27;])</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">applications_parent</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cmd_args</td><td style="vertical-align:top;">:</td><td><div><table></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cmd_options</td><td style="vertical-align:top;">:</td><td><div>&lt;Values at 0x7fe4edb22758: {&#x27;verbose&#x27;: False, &#x27;ip&#x27;: &#x27;127.0.0.1&#x27;, &#x27;debuglevel&#x27;: 30, &#x27;with_scheduler&#x27;: False, &#x27;shutdown_timeout&#x27;: 5, &#x27;taskbar&#x27;: False, &#x27;with_coverage&#x27;: False, &#x27;pid_filename&#x27;: &#x27;httpserver.pid&#x27;, &#x27;maxthreads&#x27;: None, &#x27;softcron&#x27;: False, &#x27;server_name&#x27;: &#x27;aubrey-Latitude-7280&#x27;, &#x27;bpython&#x27;: False, &#x27;nogui&#x27;: False, &#x27;port&#x27;: 8000, &#x27;print_errors&#x27;: False, &#x27;extcron&#x27;: False, &#x27;runcron&#x27;: False, &#x27;run_system_tests&#x27;: False, &#x27;test&#x27;: None, &#x27;folder&#x27;: &#x27;/home/aubrey/w2p27/web2py&#x27;, &#x27;config&#x27;: &#x27;&#x27;, &#x27;minthreads&#x27;: None, &#x27;shell&#x27;: None, &#x27;run&#x27;: &#x27;&#x27;, &#x27;log_filename&#x27;: &#x27;httpserver.log&#x27;, &#x27;profiler_dir&#x27;: None, &#x27;args&#x27;: [&#x27;&#x27;], &#x27;socket_timeout&#x27;: 5, &#x27;ssl_ca_certificate&#x27;: None, &#x27;scheduler&#x27;: None, &#x27;interfaces&#x27;: None, &#x27;ssl_private_key&#x27;: &#x27;&#x27;, &#x27;gae&#x27;: None, &#x27;password&#x27;: &#x27;******&#x27;, &#x27;request_queue_size&#x27;: 5, &#x27;ssl_certificate&#x27;: &#x27;&#x27;, &#x27;cronjob&#x27;: False, &#x27;numthreads&#x27;: None, &#x27;quiet&#x27;: False, &#x27;import_models&#x27;: False, &#x27;timeout&#x27;: 10, &#x27;plain&#x27;: False, &#x27;nobanner&#x27;: False}&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">db_sessions</td><td style="vertical-align:top;">:</td><td><div>set([])</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">debugging</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">gluon_parent</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_jython</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_pypy</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_source</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">local_hosts</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>::1</div></td></tr><tr><td><div>127.0.1.1</div></td></tr><tr><td><div>::ffff:127.0.0.1</div></td></tr><tr><td><div>127.0.0.1</div></td></tr><tr><td><div>aubrey-Latitude-7280</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">web2py_version</td><td style="vertical-align:top;">:</td><td><div>2.14.6-stable+timestamp.2016.05.10.00.21.47</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_https</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_local</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_restful</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_scheduler</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">is_shell</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">now</td><td style="vertical-align:top;">:</td><td><div>datetime.datetime(2019, 10, 23, 18, 40, 19, 339326)</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">raw_args</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">raw_extension</td><td style="vertical-align:top;">:</td><td><div>None</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">url</td><td style="vertical-align:top;">:</td><td><div>/rearing3/default/report_form</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">utcnow</td><td style="vertical-align:top;">:</td><td><div>datetime.datetime(2019, 10, 23, 8, 40, 19, 339397)</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">wsgi</td><td style="vertical-align:top;">:</td><td><div>&lt;gluon.main.LazyWSGI object at 0x7fe48f3ca350&gt;</div></td></tr></table></div>'
+tRp58
+sS'frames'
+p59
+(lp60
+(dp61
+S'file'
+p62
+S'/home/aubrey/w2p27/web2py/gluon/restricted.py'
+p63
+sS'dump'
+p64
+(dp65
+S'environment'
+p66
+S"{'A': <class 'gluon.html.A'>, 'ANY_OF': <class 'gluon.validators.ANY_OF'>, 'ASSIGNJS': <function ASSIGNJS>, 'AppConfig': <function AppConfig>, 'Auth': <class 'gluon.tools.Auth'>, 'B': <class 'gluon.html.B'>, 'BEAUTIFY': <class 'gluon.html.BEAUTIFY'>, 'BODY': <class 'gluon.html.BODY'>, 'BR': <class 'gluon.html.BR'>, 'BUTTON': <class 'gluon.html.BUTTON'>, ...}"
+p67
+sS'ccode'
+p68
+S'<code object <module> at 0x7fe48f37c430, file "/...ations/rearing3/controllers/default.py", line 11>'
+p69
+ssS'lnum'
+p70
+I227
+sS'lines'
+p71
+(dp72
+I224
+S'            ccode = code'
+p73
+sI225
+S'        else:'
+p74
+sI226
+S'            ccode = compile2(code, layer)'
+p75
+sI227
+S'        exec ccode in environment'
+p76
+sI228
+S'    except HTTP:'
+p77
+sI229
+S'        raise'
+p78
+sI230
+S'    except RestrictedError:'
+p79
+sI231
+S'        # do not encapsulate (obfuscate) the original RestrictedError'
+p80
+sI222
+S'    try:'
+p81
+sI223
+S'        if isinstance(code, types.CodeType):'
+p82
+ssS'call'
+p83
+S"(code='# -*- coding: utf-8 -*-\\n# this file is released ...()\\n\\nresponse._vars=response._caller(report_form)\\n', environment={'A': <class 'gluon.html.A'>, 'ANY_OF': <class 'gluon.validators.ANY_OF'>, 'ASSIGNJS': <function ASSIGNJS>, 'AppConfig': <function AppConfig>, 'Auth': <class 'gluon.tools.Auth'>, 'B': <class 'gluon.html.B'>, 'BEAUTIFY': <class 'gluon.html.BEAUTIFY'>, 'BODY': <class 'gluon.html.BODY'>, 'BR': <class 'gluon.html.BR'>, 'BUTTON': <class 'gluon.html.BUTTON'>, ...}, layer='/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py')"
+p84
+sS'func'
+p85
+S'restricted'
+p86
+sa(dp87
+g62
+S'/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py'
+p88
+sg64
+(dp89
+sg70
+I425
+sg71
+(dp90
+I416
+S'def call():'
+p91
+sI417
+S'    """'
+p92
+sI418
+S'    exposes services. for example:'
+p93
+sI419
+S'    http://..../[app]/default/call/jsonrpc'
+p94
+sI420
+S'    decorate with @services.jsonrpc the functions to expose'
+p95
+sI421
+S'    supports xml, json, xmlrpc, jsonrpc, amfrpc, rss, csv'
+p96
+sI422
+S'    """'
+p97
+sI423
+S'    return service()'
+p98
+sI414
+S''
+sI415
+S''
+ssg83
+S'()'
+p99
+sg85
+S'<module>'
+p100
+sa(dp101
+g62
+S'/home/aubrey/w2p27/web2py/gluon/globals.py'
+p102
+sg64
+(dp103
+S'self'
+p104
+S'undefined'
+p105
+sS'f'
+S'<function report_form>'
+p106
+ssg70
+I417
+sg71
+(dp107
+I416
+S'        self._vars = None'
+p108
+sI417
+S'        self._caller = lambda f: f()'
+p109
+sI418
+S'        self._view_environment = None'
+p110
+sI419
+S'        self._custom_commit = None'
+p111
+sI420
+S'        self._custom_rollback = None'
+p112
+sI421
+S"        self.generic_patterns = ['*']"
+p113
+sI412
+S"        self.flash = ''            # used by the default view layout"
+p114
+sI413
+S'        self.meta = Storage()      # used by web2py_ajax.html'
+p115
+sI414
+S'        self.menu = []             # used by the default view layout'
+p116
+sI415
+S'        self.files = []            # used by web2py_ajax.html'
+p117
+ssg83
+S'(f=<function report_form>)'
+p118
+sg85
+S'<lambda>'
+p119
+sa(dp120
+g62
+S'/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py'
+p121
+sg64
+(dp122
+S'global request'
+p123
+S"<Storage {'_vars': <Storage {'bioassay_name_patt...ome/aubrey/w2p27/web2py/applications/rearing3/'}>"
+p124
+sS'request.vars'
+p125
+S"<Storage {'bioassay_name_pattern': 'V23B_large_bioassay-1'}>"
+p126
+sS'request.vars.bioassay_name_pattern'
+p127
+S"'V23B_large_bioassay-1'"
+p128
+sS'global generate_pdf'
+p129
+S'<function generate_pdf>'
+p130
+ssg70
+I179
+sg71
+(dp131
+I174
+S"    withoutreps = ['{}-%'.format(i.split('-')[0]) for i in choices]"
+p132
+sI175
+S'    choices = set(choices).union(set(withoutreps))'
+p133
+sI176
+S'    choices = list(choices)'
+p134
+sI177
+S'    choices.sort()'
+p135
+sI178
+S'    if request.vars.bioassay_name_pattern:'
+p136
+sI179
+S'        generate_pdf(request.vars.bioassay_name_pattern)'
+p137
+sI180
+S'    return locals()'
+p138
+sI181
+S''
+sI182
+S'def plot_mass_by_treatment(bioassay_name_pattern):'
+p139
+sI183
+S'    """'
+p140
+ssg83
+S'()'
+p141
+sg85
+S'report_form'
+p142
+sa(dp143
+g62
+S'/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py'
+p144
+sg64
+(dp145
+S's'
+S"u'\\n        \\\\documentclass[11pt]{scrartcl}\\n   ...ages---\\n        \\n        \\\\end{document}\\n    '"
+p146
+sS'texescape'
+p147
+g105
+ssg70
+I374
+sg71
+(dp148
+I369
+S'    if False:'
+p149
+sI370
+S'        #Replace ---postmortem images---'
+p150
+sI371
+S'        tex = get_postmortem_images(bioassay_name_pattern)'
+p151
+sI372
+S"        s = s.replace('---postmortem images---', tex)"
+p152
+sI373
+S''
+sI374
+S'    s = texescape(s)'
+p153
+sI375
+S'    logger.debug(s)'
+p154
+sI376
+S''
+sI377
+S'    # Generate PDF'
+p155
+sI378
+S'    with open(\'report.tex\', "w") as f:'
+p156
+ssg83
+S"(bioassay_name_pattern='V23B_large_bioassay-1')"
+p157
+sg85
+S'generate_pdf'
+p158
+sasS'pyver'
+p159
+S'Python 2.7.12: /home/aubrey/.virtualenvs/w2p27/bin/python (prefix: /home/aubrey/.virtualenvs/w2p27)'
+p160
+sS'session'
+p161
+g57
+(S'ss\t\x00\x00<div><table><tr><td style="font-weight:bold;vertical-align:top;">auth</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">expiration</td><td style="vertical-align:top;">:</td><td><div>2592000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">hmac_key</td><td style="vertical-align:top;">:</td><td><div>56ad3bb0-82d2-42d8-8962-9e94c6ac8774</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">last_visit</td><td style="vertical-align:top;">:</td><td><div>datetime.datetime(2019, 10, 23, 16, 55, 8, 744941)</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">remember_me</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">user</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">email</td><td style="vertical-align:top;">:</td><td><div>aubreymoore@guam.net</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">first_name</td><td style="vertical-align:top;">:</td><td><div>Aubrey</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">id</td><td style="vertical-align:top;">:</td><td><div>1L</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">last_name</td><td style="vertical-align:top;">:</td><td><div>Moore</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">registration_id</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">registration_key</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">reset_password_key</td><td style="vertical-align:top;">:</td><td><div></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">user_groups</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">1</td><td style="vertical-align:top;">:</td><td><div>user_1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">2</td><td style="vertical-align:top;">:</td><td><div>wiki_editor</div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">flash</td><td style="vertical-align:top;">:</td><td><div>None</div></td></tr></table></div>'
+tRp162
+sS'etype'
+p163
+S"<type 'exceptions.NameError'>"
+p164
+sS'date'
+p165
+S'Wed Oct 23 18:40:26 2019'
+p166
+sS'response'
+p167
+g57
+(S's\n(\x00\x00<div><table><tr><td style="font-weight:bold;vertical-align:top;">body</td><td style="vertical-align:top;">:</td><td><div>&lt;cStringIO.StringO object at 0x7fe48fad2068&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">cookies</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">session_id_rearing3</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64<table><tr><td style="font-weight:bold;vertical-align:top;">comment</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">domain</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">expires</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">httponly</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">max-age</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">path</td><td style="vertical-align:top;">:</td><td><div>/</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">secure</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">version</td><td style="vertical-align:top;">:</td><td><div></div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">delimiters</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>{{</div></td></tr><tr><td><div>}}</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">files</td><td style="vertical-align:top;">:</td><td><div><table></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">flash</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">form_label_separator</td><td style="vertical-align:top;">:</td><td><div>&#x27;&#x27;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">formstyle</td><td style="vertical-align:top;">:</td><td><div>bootstrap3_inline</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">generic_patterns</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>*</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">google_analytics_id</td><td style="vertical-align:top;">:</td><td><div>None</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">headers</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">X-Powered-By</td><td style="vertical-align:top;">:</td><td><div>web2py</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">logo</td><td style="vertical-align:top;">:</td><td><div><a class="navbar-brand" href="http://www.web2py.com/" id="web2py-logo"><b>web<span>2</span>py</b>&trade;&nbsp;</a></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">menu</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div><table><tr><td><div>Home</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/index</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Bioassay Table</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/bioassay_form</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Beetle Table</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/btl_form</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Observation Table</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/obs_form</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Generate Report</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/report_form</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Wiki</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/wiki</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Check in Beetles</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/checkin_form</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Log</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/view_log</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>TeX Log</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/view_tex_log</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Import Btl CSV</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/import_btl_csv</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Import Obs CSV</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/import_obs_csv</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Download Database</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/download_db</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr><tr><td><div><table><tr><td><div>Bioassay Summary</div></td></tr><tr><td><div>False</div></td></tr><tr><td><div>/rearing3/default/bioassay_summary</div></td></tr><tr><td><div><table></table></div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">meta</td><td style="vertical-align:top;">:</td><td><div><table><tr><td style="font-weight:bold;vertical-align:top;">author</td><td style="vertical-align:top;">:</td><td><div>Your Name &lt;you@example.com&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">description</td><td style="vertical-align:top;">:</td><td><div>a cool new app</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">generator</td><td style="vertical-align:top;">:</td><td><div>Web2py Web Framework</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">keywords</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>web2py</div></td></tr><tr><td><div>python</div></td></tr><tr><td><div>framework</div></td></tr></table></div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">models_to_run</td><td style="vertical-align:top;">:</td><td><div><table><tr><td><div>^\\w+\\.py$</div></td></tr><tr><td><div>^default/\\w+\\.py$</div></td></tr><tr><td><div>^default/report_form/\\w+\\.py$</div></td></tr></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">postprocessing</td><td style="vertical-align:top;">:</td><td><div><table></table></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_client</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_cookie_compression_level</td><td style="vertical-align:top;">:</td><td><div>None</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_cookie_expires</td><td style="vertical-align:top;">:</td><td><div>2592000</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_data_name</td><td style="vertical-align:top;">:</td><td><div>session_data_rearing3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_file</td><td style="vertical-align:top;">:</td><td><div>&lt;open file &#x27;/home/aubrey/w2p27/web2py/applications/rearing3/sessions/008/1f0/127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64&#x27;, mode &#x27;rb+&#x27; at 0x7fe48f407c00&gt;</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_filename</td><td style="vertical-align:top;">:</td><td><div>/home/aubrey/w2p27/web2py/applications/rearing3/sessions/127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_hash</td><td style="vertical-align:top;">:</td><td><div>9377aa6c37d0733e8147a26e0543c80b</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_id</td><td style="vertical-align:top;">:</td><td><div>127.0.0.1-2a81924a-ad57-4a2f-a2ac-2e1325ceca64</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_id_name</td><td style="vertical-align:top;">:</td><td><div>session_id_rearing3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_locked</td><td style="vertical-align:top;">:</td><td><div>True</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_masterapp</td><td style="vertical-align:top;">:</td><td><div>rearing3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_new</td><td style="vertical-align:top;">:</td><td><div>False</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">session_storage_type</td><td style="vertical-align:top;">:</td><td><div>file</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">status</td><td style="vertical-align:top;">:</td><td><div>200</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">subtitle</td><td style="vertical-align:top;">:</td><td><div></div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">title</td><td style="vertical-align:top;">:</td><td><div>Rearing3</div></td></tr><tr><td style="font-weight:bold;vertical-align:top;">view</td><td style="vertical-align:top;">:</td><td><div>default/report_form.html</div></td></tr></table></div>'
+tRp168
+sS'locals'
+p169
+(dp170
+S'kmf'
+p171
+S'<lifelines.KaplanMeierFitter: fitted with 26 observations, 22 censored>'
+p172
+sS'rows'
+p173
+S'[]'
+p174
+sS'e'
+S'array([ True,  True,  True, False, False, False,...False, False, False, False, False, False, False])'
+p175
+sS'name'
+p176
+S"u'virus'"
+p177
+sS'df'
+p178
+S'            bioassay_name bioassay_treatment col...male  3.200000e+01  False\n\n[53 rows x 24 columns]'
+p179
+sS'file_name'
+p180
+S"'mass-virus.pdf'"
+p181
+sS'results'
+p182
+S'<lifelines.StatisticalResult>'
+p183
+sS'tex'
+p184
+S"'\\\\subsection*{mass control.pdf}\\n\\\\includegraphics[...ncludegraphics[width=\\\\textwidth]{mass-virus.pdf}\\n'"
+p185
+sS'bioassay_name_pattern'
+p186
+S"'V23B_large_bioassay-1'"
+p187
+sS's'
+S"u'\\n        \\\\documentclass[11pt]{scrartcl}\\n   ...ages---\\n        \\n        \\\\end{document}\\n    '"
+p188
+sS'fig'
+p189
+S'<Figure size 1800x600 with 1 Axes>'
+p190
+sS'sql'
+p191
+S'\'select tex from bioassay where name="V23B_large_bioassay-1"\''
+p192
+sS'file_list'
+p193
+S"['mass-control.pdf', 'mass-virus.pdf']"
+p194
+sS'ax'
+p195
+S'<matplotlib.axes._subplots.AxesSubplot object>'
+p196
+sS'grouped_df'
+p197
+S'            bioassay_name bioassay_treatment col...male -9.223372e+18  False\n\n[26 rows x 24 columns]'
+p198
+sS'mortality_table_tex'
+p199
+S"u'\\n        \\\\begin{table}[h!]\\n        \\\\center...\\\\\\\\\\n\\\\bottomrule\\n\\\\end{tabular}\\n\\\\end{table}'"
+p200
+sS'bioassay_name'
+p201
+S"'V23B_large_bioassay-1'"
+p202
+sS't'
+S'array([ 1.60000000e+01,  2.20000000e+01,  1.7000...04e+18,  3.20000000e+01,\n        3.20000000e+01])'
+p203
+sssS'traceback'
+p204
+S'Traceback (most recent call last):\n  File "/home/aubrey/w2p27/web2py/gluon/restricted.py", line 227, in restricted\n    exec ccode in environment\n  File "/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py", line 425, in <module>\n  File "/home/aubrey/w2p27/web2py/gluon/globals.py", line 417, in <lambda>\n    self._caller = lambda f: f()\n  File "/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py", line 179, in report_form\n    generate_pdf(request.vars.bioassay_name_pattern)\n  File "/home/aubrey/w2p27/web2py/applications/rearing3/controllers/default.py", line 374, in generate_pdf\n    s = texescape(s)\nNameError: global name \'texescape\' is not defined\n'
+p205
+s.

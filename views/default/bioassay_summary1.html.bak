@@ -1,0 +1,4 @@
+{{extend 'layout.html'}}
+<h1>This is the default/bioassay_summary1.html template</h1>
+{{=summary}}
+{{=BEAUTIFY(response._vars)}}

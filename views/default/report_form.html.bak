@@ -1,0 +1,13 @@
+{{extend 'layout.html'}}
+<h2>GENERATE REPORT</h2>
+
+<form>
+Bioassay:
+    <select name="bioassay_name_pattern">
+        {{for choice in choices:}}
+        <option value="{{=choice}}">{{=choice}}</option>
+        {{pass}}
+      </select>
+      <br><br>
+    <input type="submit">
+</form>

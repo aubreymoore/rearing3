@@ -1,0 +1,5 @@
+{{extend 'layout.html'}}
+<h1>This is the default/checkin_form.html template</h1>
+{{=form}}
+
+{{=result}}

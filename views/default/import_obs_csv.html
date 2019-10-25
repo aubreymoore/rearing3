@@ -1,0 +1,19 @@
+{{extend 'layout.html'}}
+
+<h2>Import Observations CSV</h2>
+
+CSV format:<br>
+
+<pre>
+btl,date_observed,mass,notes,Treatment
+1617,2019-07-07,2335,,control
+1617,2019-07-12,2276,,control
+1617,2019-07-14,,dead,control
+</pre>
+
+{{=FORM(
+    INPUT(_type='file',_name='csvfile'),
+    INPUT(_type='hidden',_value='obs',_name='table'),
+    INPUT(_type='submit',_value='Upload'))}}
+
+{{=response.toolbar()}}
